@@ -52,8 +52,14 @@ CREATE TABLE IF NOT EXISTS locations (
     data    TEXT DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_loc_token ON locations(token, id);
-"""
 
+CREATE TABLE IF NOT EXISTS dossiers (
+    token       TEXT PRIMARY KEY,
+    ts          TEXT NOT NULL,
+    confidence  INTEGER DEFAULT 0,
+    data        TEXT DEFAULT '{}'
+);
+"""
 
 class Storage:
     def __init__(self, path: str | Path) -> None:
@@ -177,11 +183,35 @@ class Storage:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    # ── dossiers ────────────────────────────────────────────────
+    def set_dossier(self, tok: str, data: dict[str, Any]) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO dossiers(token, ts, confidence, data) VALUES (?,?,?,?)"
+                " ON CONFLICT(token) DO UPDATE SET ts=excluded.ts,"
+                " confidence=excluded.confidence, data=excluded.data",
+                (tok, utcnow(), int(data.get("confidence") or 0), jdump(data)),
+            )
+            self._conn.commit()
+
+    def get_dossier(self, tok: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM dossiers WHERE token=?", (tok,)
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["data"] = jload(item.get("data"), {})
+        return item
+
     # ── bundle ──────────────────────────────────────────────────
     def bundle(self, tok: str) -> dict[str, Any]:
+        dossier = self.get_dossier(tok)
         return {
             "session": self.get_session(tok),
             "events": self.list_events(tok),
             "fingerprints": self.list_fingerprints(tok),
             "locations": self.list_locations(tok),
+            "dossier": dossier["data"] if dossier else None,
         }

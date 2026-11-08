@@ -1,4 +1,4 @@
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e .
-cp .env.example .env             # اختياري: مفاتيح API
+phonex serve --public-base https://xxxx.ngrok-free.app
+phonex call +9647701234567 -o out/script.md
+# اتصل، أرسل الرابط، راقب اللوحة
+phonex analyze <token>
