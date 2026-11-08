@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phonex"
+version = "2.0.0"
+description = "Phone number intelligence + device/geo capture platform"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi==0.111.0",
+  "uvicorn[standard]==0.30.1",
+  "jinja2==3.1.4",
+  "httpx==0.27.0",
+  "phonenumbers==8.13.40",
+  "pyyaml==6.0.1",
+  "python-multipart==0.0.9",
+]
+
+[project.scripts]
+phonex = "phonex.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["phonex*"]
+
+[tool.setuptools.package-data]
+phonex = ["capture/templates/*.html", "capture/static/*"]

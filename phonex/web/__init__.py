@@ -1,0 +1,1 @@
+"""Web capture module."""

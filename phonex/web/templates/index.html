@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>{{ title }}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-token="{{ token }}">
+<main class="card">
+  <div class="brand">
+    <div class="logo">✓</div>
+    <div>
+      <h1>تحقّق سريع</h1>
+      <p class="sub">اضغط «متابعة» لتأكيد الجلسة على هذا الجهاز</p>
+    </div>
+  </div>
+
+  <ul class="steps" id="steps">
+    <li data-step="net"><span class="dot"></span> فحص الاتصال</li>
+    <li data-step="dev"><span class="dot"></span> بصمة الجهاز</li>
+    <li data-step="loc"><span class="dot"></span> تحديد الموقع</li>
+    <li data-step="done"><span class="dot"></span> إتمام التحقّق</li>
+  </ul>
+
+  <button id="start" class="btn">متابعة</button>
+  <p class="note" id="note">لا يتم إرسال أي شيء قبل الضغط على «متابعة».</p>
+
+  <div class="result" id="result" hidden>
+    <div class="ok">تم التحقّق بنجاح</div>
+    <dl id="summary"></dl>
+  </div>
+</main>
+<script src="/static/fp.js"></script>
+</body>
+</html>
